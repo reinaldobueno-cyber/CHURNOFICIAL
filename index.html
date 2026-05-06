@@ -1067,10 +1067,36 @@ async function loadFromSheets() {
   const lines = csv.split('\n').filter(function(l){ return l.trim(); });
   if (lines.length < 2) throw new Error('Planilha vazia. Verifique a aba Cancelamentos no Google Sheets.');
 
+  function parseCsvRow(line, sep){
+    const out=[];
+    let cur='', inQuotes=false;
+    for(let i=0;i<line.length;i++){
+      const ch=line[i];
+      if(ch==='"'){
+        if(inQuotes && line[i+1]==='"'){ cur+='"'; i++; }
+        else inQuotes=!inQuotes;
+      } else if(ch===sep && !inQuotes){
+        out.push(cur.trim());
+        cur='';
+      } else {
+        cur+=ch;
+      }
+    }
+    out.push(cur.trim());
+    return out.map(function(c){ return c.replace(/^"|"$/g,'').replace(/""/g,'"').trim(); });
+  }
+
+  function parseBrNumber(value){
+    const s=String(value||'').trim();
+    if(!s) return 0;
+    if(s.includes(',')) return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0;
+    return parseFloat(s) || 0;
+  }
+
   // Parse header — support both comma and semicolon CSV
   var hStart = lines[0].toLowerCase().includes('cliente') ? 0 : 1;
   const sep = lines[hStart].includes(';') ? ';' : ',';
-  const header = lines[hStart].split(sep).map(function(h){ return h.trim().replace(/"/g,''); });
+  const header = parseCsvRow(lines[hStart], sep).map(function(h){ return h.trim().replace(/"/g,''); });
 
   const idx = {
     cliente:  header.indexOf('Cliente'),
@@ -1098,7 +1124,7 @@ async function loadFromSheets() {
   for (let i = hStart+1; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
-    const cols = line.split(sep).map(function(c){ return c.trim().replace(/^"|"$/g,'').replace(/""/g,'"'); });
+    const cols = parseCsvRow(line, sep);
     const cliente = cols[idx.cliente];
     const churn   = cols[idx.churn] || '';
     if (!cliente) continue;
@@ -1108,8 +1134,8 @@ async function loadFromSheets() {
       cols[idx.motivo]   || '',
       churn,
       parseInt(cols[idx.ano])    || 0,
-      parseFloat(cols[idx.mrr])  || 0,
-      parseFloat(cols[idx.valor])|| 0,
+      parseBrNumber(cols[idx.mrr]),
+      parseBrNumber(cols[idx.valor]),
       cols[idx.pagto]    || '',
       cols[idx.canal]    || '',
       cols[idx.vendedor] || '',

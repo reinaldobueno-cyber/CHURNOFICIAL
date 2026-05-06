@@ -1068,8 +1068,9 @@ async function loadFromSheets() {
   if (lines.length < 2) throw new Error('Planilha vazia. Verifique a aba Cancelamentos no Google Sheets.');
 
   // Parse header — support both comma and semicolon CSV
-  const sep = lines[0].includes(';') ? ';' : ',';
-  const header = lines[0].split(sep).map(function(h){ return h.trim().replace(/"/g,''); });
+  var hStart = lines[0].toLowerCase().includes('cliente') ? 0 : 1;
+  const sep = lines[hStart].includes(';') ? ';' : ',';
+  const header = lines[hStart].split(sep).map(function(h){ return h.trim().replace(/"/g,''); });
 
   const idx = {
     cliente:  header.indexOf('Cliente'),
@@ -1094,7 +1095,7 @@ async function loadFromSheets() {
 
   const VALID_STATUS = ['Sim','Não','Em andamento'];
   const newRAW = [];
-  for (let i = dataStartIdx; i < lines.length; i++) {
+  for (let i = hStart+1; i < lines.length; i++) {
     const line = lines[i];
     if (!line.trim()) continue;
     const cols = line.split(sep).map(function(c){ return c.trim().replace(/^"|"$/g,'').replace(/""/g,'"'); });
@@ -1785,13 +1786,13 @@ function setFpSelect(field, sel){
 }
 
 function getFiltered(){
-  const q=(document.getElementById('searchBox')?.value||'').toLowerCase();
+  const q=norm(document.getElementById('searchBox')?.value||'');
   return RAW.filter(r=>{
     if(F.ano!=='all' && String(r[3])!==F.ano) return false;
     if(F.churn!=='all' && r[2]!==F.churn) return false;
-    if(F.motivo!=='all' && r[1]!==F.motivo) return false;
-    if(F.vendedor!=='all' && !r[8].toUpperCase().includes(F.vendedor.toUpperCase())) return false;
-    if(q && !r[0].toLowerCase().includes(q) && !r[8].toLowerCase().includes(q) && !r[1].toLowerCase().includes(q)) return false;
+    if(F.motivo!=='all' && norm(r[1])!==norm(F.motivo)) return false;
+    if(F.vendedor!=='all' && !norm(r[8]).includes(norm(F.vendedor))) return false;
+    if(q && !norm(r[0]).includes(q) && !norm(r[8]).includes(q) && !norm(r[1]).includes(q)) return false;
     return true;
   });
 }
@@ -1808,6 +1809,7 @@ const fR=n=>n>=1000000?'R$ '+(n/1e6).toFixed(2)+'M':n>=1000?'R$ '+(n/1000).toFix
 const fRfull=n=>'R$ '+n.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fN=n=>n.toLocaleString('pt-BR');
 const fP=n=>n==null?'—':n.toFixed(2)+'%';
+const norm=s=>(s||'').toString().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase().replace(/\s+/g,' ').trim();
 
 /* ════════════════════════════════════
    PAGE SWITCHING
@@ -1985,14 +1987,41 @@ function renderRanking(){
    TABLE
 ════════════════════════════════════ */
 const COL_MAP={Cliente:0,'Churn?':2,Motivo:1,Ano:3,mrr:4,'Valor Atual':5,'Forma de pagamento':6,'Tipo da venda':7,Vendedor:8,'Data Cancelamento':9};
+const NUM_COLS=new Set(['Ano','mrr','Valor Atual']);
+const DATE_COLS=new Set(['Data Cancelamento']);
+const tblCollator=new Intl.Collator('pt-BR',{numeric:true,sensitivity:'base'});
+
+function parsePtDate(value){
+  if(value instanceof Date) return value.getTime();
+  const s=String(value||'').trim();
+  const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
+  if(m){
+    const y=+m[3]<100?2000+(+m[3]):+m[3];
+    return new Date(y,+m[2]-1,+m[1]).getTime();
+  }
+  const t=Date.parse(s);
+  return Number.isNaN(t)?0:t;
+}
+
+function getTableSortValue(row,col){
+  const ci=COL_MAP[col]??0;
+  const value=row[ci];
+  if(NUM_COLS.has(col)) return Number(value)||0;
+  if(DATE_COLS.has(col)) return parsePtDate(value);
+  return String(value||'');
+}
+
+function syncTableSortHeader(){
+  document.querySelectorAll('#mainTable th').forEach(th=>{
+    th.classList.remove('asc','desc');
+    if(th.dataset.col===sortCol) th.classList.add(sortDir);
+  });
+}
 
 function sortTable(col){
   if(sortCol===col) sortDir=sortDir==='asc'?'desc':'asc';
   else{sortCol=col;sortDir=col==='Ano'||col==='mrr'||col==='Valor Atual'?'desc':'asc';}
-  document.querySelectorAll('.tbl th').forEach(th=>{
-    th.classList.remove('asc','desc');
-    if(th.dataset.col===col) th.classList.add(sortDir);
-  });
+  syncTableSortHeader();
   curPage=1;renderTable();
 }
 
@@ -2010,12 +2039,13 @@ function renderTable(){
   if(qC) data = data.filter(function(r){ return r[0].toLowerCase().indexOf(qC)>=0; });
   if(qM) data = data.filter(function(r){ return r[1].toLowerCase().indexOf(qM)>=0; });
   if(qV) data = data.filter(function(r){ return r[8].toLowerCase().indexOf(qV)>=0; });
-  const ci=COL_MAP[sortCol]??0;
   data.sort((a,b)=>{
-    let va=a[ci],vb=b[ci];
-    if(typeof va==='number') return sortDir==='asc'?va-vb:vb-va;
-    return sortDir==='asc'?String(va).localeCompare(String(vb)):String(vb).localeCompare(String(va));
+    const va=getTableSortValue(a,sortCol), vb=getTableSortValue(b,sortCol);
+    let cmp=(NUM_COLS.has(sortCol)||DATE_COLS.has(sortCol)) ? va-vb : tblCollator.compare(va,vb);
+    if(cmp===0) cmp=parsePtDate(a[9])-parsePtDate(b[9]);
+    return sortDir==='asc'?cmp:-cmp;
   });
+  syncTableSortHeader();
   const total=data.length, pages=Math.max(1,Math.ceil(total/PER_PAGE));
   curPage=Math.min(curPage,pages);
   const start=(curPage-1)*PER_PAGE, slice=data.slice(start,start+PER_PAGE);
@@ -2663,10 +2693,10 @@ function renderExecutivo() {
   var trendLabels = trendYears.map(String);
 
   const yearCounts = trendYears.map(function(y){
-    return RAW.filter(function(r){return r[2]==='Sim'&&r[3]===y;}).length;
+    return baseChurns.filter(function(r){ return r[3]===y; }).length;
   });
   const yearMRR = trendYears.map(function(y){
-    return RAW.filter(function(r){return r[2]==='Sim'&&r[3]===y;}).reduce(function(s,r){return s+r[4];},0);
+    return baseChurns.filter(function(r){ return r[3]===y; }).reduce(function(s,r){return s+r[4];},0);
   });
 
   if(CH.trend) CH.trend.destroy();

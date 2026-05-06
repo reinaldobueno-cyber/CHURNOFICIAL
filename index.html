@@ -1110,6 +1110,7 @@ async function loadFromSheets() {
     vendedor: header.indexOf('Vendedor'),
     data:     header.indexOf('Data_Cancelamento'),
   };
+  if (idx.data < 0) idx.data = 9; // coluna J da aba Cancelamentos
 
   if (idx.cliente < 0 || idx.churn < 0 || idx.mrr < 0) {
     throw new Error(

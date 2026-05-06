@@ -876,7 +876,7 @@ footer p{font-size:10px;color:var(--ink5);letter-spacing:.08em;text-transform:up
       <div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
         <div class="kpi k-moss">
           <div class="kl">Clientes Retidos</div>
-          <div class="kv">7</div>
+          <div class="kv" id="retCount">8</div>
           <div class="ks">evitaram cancelamento</div>
         </div>
         <div class="kpi">
@@ -886,12 +886,12 @@ footer p{font-size:10px;color:var(--ink5);letter-spacing:.08em;text-transform:up
         </div>
         <div class="kpi">
           <div class="kl">Formalizados</div>
-          <div class="kv">5</div>
-          <div class="ks">com data de confirmação</div>
+          <div class="kv" id="retFormal">8</div>
+          <div class="ks" id="retFormalSub">todos com confirmação · 1 upgrade</div>
         </div>
         <div class="kpi">
           <div class="kl">Em Tratativa</div>
-          <div class="kv">2</div>
+          <div class="kv" id="retTrat">0</div>
           <div class="ks">aguardando formalização</div>
         </div>
       </div>
@@ -931,7 +931,7 @@ footer p{font-size:10px;color:var(--ink5);letter-spacing:.08em;text-transform:up
           Diferente de um cancelamento normal (que gera perda de MRR), a retenção <strong>preserva a receita</strong> e demonstra capacidade de relacionamento pós-venda.
           <br><br>
           <strong style="color:var(--moss)">Impacto financeiro:</strong> Reter um cliente custa em média 5× menos do que adquirir um novo.
-          O MRR recuperado pelos 7 retidos representa receita que teria sido perdida e que agora permanece na base ativa.
+          O MRR recuperado pelos clientes retidos representa receita que teria sido perdida e que agora permanece na base ativa.
         </div>
       </div>
 
@@ -2367,30 +2367,70 @@ function renderCharts(){
    RETIDOS
 ════════════════════════════════════ */
 let RETIDOS = [
-  {cliente:"FERNANDA NUNES MARQUI",       resp:"Reinaldo",   email:"2025-10-13", mrr:null},
-  {cliente:"ROGERIO MARCIO MENEZES DA COSTA", resp:"Reinaldo", email:"2025-01-13", mrr:877.39},
-  {cliente:"ZAERCIO FAGUNDES GOUVEIA",    resp:"Apoio José", email:"Não formalizado", mrr:null},
-  {cliente:"ELLOS GESTÃO E REPRODUÇÃO",   resp:"Raissa",     email:"2026-01-12", mrr:null},
-  {cliente:"FAZENDA DA FACA LTDA",        resp:"Reinaldo",   email:"Em tratativa comercial", mrr:null},
-  {cliente:"PATRICIA ZANCANER CARO - FAZENDA BONSUCESSO", resp:"Reinaldo", email:"2026-02-05", mrr:null},
-  {cliente:"JOÃO PEREIRA DA SILVA",       resp:"Reinaldo",   email:"2026-02-06", mrr:null},
+  {cliente:"FERNANDA NUNES MARQUI",       resp:"Reinaldo",   status:"Formalizado", data:"13/10/2025", mrr:466.56},
+  {cliente:"ROGERIO MARCIO MENEZES DA COSTA", resp:"Reinaldo", status:"Formalizado", data:"13/01/2025", mrr:877.39},
+  {cliente:"ELLOS GESTÃO E REPRODUÇÃO",   resp:"Raissa",     status:"Formalizado", data:"12/01/2026", mrr:741.36},
+  {cliente:"ZAERCIO FAGUNDES GOUVEIA",    resp:"José Carlos", status:"Formalizado", data:"05/02/2026", mrr:2941.25},
+  {cliente:"PATRICIA ZANCANER CARO - FAZ. BONSUCESSO", resp:"Reinaldo", status:"Formalizado", data:"05/02/2026", mrr:942.17},
+  {cliente:"ALEXANDER DUARTE PANIAGO",    resp:"Raissa/Reinaldo", status:"Formalizado com Upgrade", data:"20/02/2026", mrr:790.00},
+  {cliente:"PATRICIA ZANCANER CARO - FAZ. BONSUCESSO", resp:"Raissa", status:"Formalizado", data:"30/03/2026", mrr:942.17},
+  {cliente:"TARCISIO JOSE LANGER",        resp:"Reinaldo",   status:"Formalizado", data:"13/04/2026", mrr:372.59},
 ];
 
-function renderRetidos(){
-  // MRR values are hardcoded from the spreadsheet data
+function parseCsvRow(line, sep){
+  const out=[];
+  let cur='', inQuotes=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(ch==='"'){
+      if(inQuotes && line[i+1]==='"'){ cur+='"'; i++; }
+      else inQuotes=!inQuotes;
+    } else if(ch===sep && !inQuotes){
+      out.push(cur.trim());
+      cur='';
+    } else {
+      cur+=ch;
+    }
+  }
+  out.push(cur.trim());
+  return out.map(function(c){ return c.replace(/^"|"$/g,'').replace(/""/g,'"').trim(); });
+}
 
+function parseBrNumber(value){
+  const s=String(value||'').trim();
+  if(!s) return 0;
+  if(s.includes(',')) return parseFloat(s.replace(/\./g,'').replace(',','.')) || 0;
+  return parseFloat(s) || 0;
+}
+
+function renderRetidos(){
   var totalMRR = RETIDOS.reduce(function(s,r){ return s + (r.mrr||0); }, 0);
   var mrrEl = document.getElementById('retMRR');
   if(mrrEl) mrrEl.textContent = totalMRR > 0 ? fR(totalMRR) + '/mês' : '—';
+  var formalizados = RETIDOS.filter(function(r){ return norm(r.status||'').indexOf('FORMALIZADO') >= 0; });
+  var upgrades = RETIDOS.filter(function(r){ return norm(r.status||'').indexOf('UPGRADE') >= 0; });
+  var tratativas = RETIDOS.filter(function(r){ return norm(r.status||'').indexOf('TRATATIVA') >= 0 || norm(r.status||'').indexOf('ANDAMENTO') >= 0; });
+  var countEl = document.getElementById('retCount');
+  var formalEl = document.getElementById('retFormal');
+  var formalSubEl = document.getElementById('retFormalSub');
+  var tratEl = document.getElementById('retTrat');
+  if(countEl) countEl.textContent = RETIDOS.length;
+  if(formalEl) formalEl.textContent = formalizados.length;
+  if(formalSubEl) formalSubEl.textContent = formalizados.length === RETIDOS.length
+    ? 'todos com confirmação' + (upgrades.length ? ' · ' + upgrades.length + ' upgrade' : '')
+    : 'com data de confirmação';
+  if(tratEl) tratEl.textContent = tratativas.length;
 
   var tbody = document.getElementById('retidosTbody');
   if(!tbody) return;
 
   var rows = RETIDOS.map(function(r, i){
-    var isFormalized = r.email && /\d{4}/.test(r.email);
-    var isInProgress = r.email && (r.email.indexOf('tratativa') >= 0 || r.email.indexOf('formalizado') >= 0);
+    var statusNorm = norm(r.status||'');
+    var isFormalized = statusNorm.indexOf('FORMALIZADO') >= 0;
+    var hasUpgrade = statusNorm.indexOf('UPGRADE') >= 0;
+    var isInProgress = statusNorm.indexOf('TRATATIVA') >= 0 || statusNorm.indexOf('ANDAMENTO') >= 0;
     var statusClass = isFormalized ? 'pill-moss' : 'pill-amber';
-    var statusLabel = isFormalized ? '✓ Formalizado' : (isInProgress ? '⏳ Em andamento' : '— Pendente');
+    var statusLabel = hasUpgrade ? '✓ Formalizado + upgrade' : (isFormalized ? '✓ Formalizado' : (isInProgress ? '⏳ Em tratativa' : '— Pendente'));
     var mrrDisplay  = r.mrr
       ? '<span style="font-family:\'JetBrains Mono\',monospace;font-weight:600;color:var(--moss2)">' + fRfull(r.mrr) + '/mês</span>'
       : '<span style="color:var(--ink4)">—</span>';
@@ -2398,7 +2438,7 @@ function renderRetidos(){
       + '<td style="color:var(--ink4);font-size:11px">' + (i+1) + '</td>'
       + '<td style="font-weight:500;max-width:280px">' + r.cliente + '</td>'
       + '<td style="color:var(--ink3)">' + r.resp + '</td>'
-      + '<td><span style="font-size:11px;color:var(--ink3)">' + (r.email||'—') + '</span></td>'
+      + '<td><span style="font-size:11px;color:var(--ink3)">' + (r.data||'—') + '</span></td>'
       + '<td>' + mrrDisplay + '</td>'
       + '<td><span class="pill ' + statusClass + '">' + statusLabel + '</span></td>'
       + '</tr>';
@@ -2434,7 +2474,7 @@ async function loadRetidosFromSheets() {
   const lines = csv.split('\n').filter(function(l){ return l.trim(); });
   if (lines.length < 2) return;
 
-  const header = lines[0].split(sep).map(function(h){ return h.trim().replace(/"/g,''); });
+  const header = parseCsvRow(lines[0], sep).map(function(h){ return h.trim().replace(/"/g,''); });
   const iCliente = header.indexOf('Cliente');
   const iResp    = header.indexOf('Responsavel');
   const iStatus  = header.indexOf('Status');
@@ -2446,15 +2486,15 @@ async function loadRetidosFromSheets() {
   const newRetidos = [];
   for (let i = 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
-    const cols = lines[i].split(sep).map(function(c){ return c.trim().replace(/^"|"$/g,''); });
+    const cols = parseCsvRow(lines[i], sep);
     const cliente = cols[iCliente];
     if (!cliente) continue;
     newRetidos.push({
       cliente: cliente,
       resp:    iResp   >= 0 ? cols[iResp]   : '',
-      email:   iData   >= 0 ? cols[iData]   : '',
+      data:    iData   >= 0 ? cols[iData]   : '',
       status:  iStatus >= 0 ? cols[iStatus] : '',
-      mrr:     iMRR    >= 0 ? parseFloat(cols[iMRR]) || 0 : 0,
+      mrr:     iMRR    >= 0 ? parseBrNumber(cols[iMRR]) : 0,
     });
   }
 

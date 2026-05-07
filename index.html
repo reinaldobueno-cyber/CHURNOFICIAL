@@ -586,12 +586,12 @@ footer p{font-size:10px;color:var(--ink5);letter-spacing:.08em;text-transform:up
     <!-- ── NRR + Benchmark + Projeção ── -->
     <div class="g3" style="margin-bottom:20px" id="benchRow">
 
-      <!-- NRR Card -->
+      <!-- Impacto do Churn Real Card -->
       <div class="bench-card">
-        <div class="ct">📊 NRR — Net Revenue Retention
-          <span class="tip-icon" data-tip="NRR = quanto da receita recorrente você retém após expansões e cancelamentos. Acima de 100% = a base cresce sozinha. Calculado como: MRR Ativo atual ÷ MRR Ativo do ano anterior × 100.">i</span>
+        <div class="ct">📊 Impacto do Churn Real no MRR
+          <span class="tip-icon" data-tip="Percentual do MRR ativo do ano anterior consumido pelo MRR perdido em contratos com Churn = Sim. É uma métrica financeira, por isso pode diferir do churn real por quantidade de contratos.">i</span>
         </div>
-        <div class="cs" style="margin-bottom:14px">Retenção líquida de receita · por ano</div>
+        <div class="cs" style="margin-bottom:14px">MRR perdido por Churn = Sim sobre a base do ano anterior</div>
         <div id="nrrContent"></div>
       </div>
 
@@ -2039,6 +2039,27 @@ const NUM_COLS=new Set(['Ano','mrr','Valor Atual']);
 const DATE_COLS=new Set(['Data Cancelamento']);
 const tblCollator=new Intl.Collator('pt-BR',{numeric:true,sensitivity:'base'});
 
+function escHTML(value){
+  return String(value == null ? '' : value).replace(/[&<>"']/g, function(ch){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
+  });
+}
+
+function escAttr(value){
+  return escHTML(value).replace(/`/g, '&#96;');
+}
+
+function escJSString(value){
+  return String(value == null ? '' : value)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/</g, '\\x3C')
+    .replace(/>/g, '\\x3E');
+}
+
 function parsePtDate(value){
   if(value instanceof Date) return value.getTime();
   const s=String(value||'').trim();
@@ -2109,16 +2130,16 @@ function renderTable(){
 
   document.getElementById('tblBody').innerHTML=slice.map(r=>`
     <tr>
-      <td style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r[0]}">${r[0]}</td>
+      <td style="max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(r[0])}">${escHTML(r[0])}</td>
       <td><span class="pill ${r[2]==='Sim'?'pill-red':r[2]==='Em andamento'?'pill-amber':'pill-moss'}">${r[2]==='Sim'?'✗ Churn':r[2]==='Em andamento'?'⏳ Em and.':'✓ Não'}</span></td>
-      <td><span class="pill ${motifColor[r[1]]||'pill-gray'}" style="font-size:9.5px">${r[1]}</span></td>
+      <td><span class="pill ${motifColor[r[1]]||'pill-gray'}" style="font-size:9.5px">${escHTML(r[1])}</span></td>
       <td class="mono">${r[3]}</td>
       <td class="mono right" style="font-weight:600;color:${r[2]==='Sim'?'var(--red2)':'var(--ink3)'}">${fRfull(r[4])}</td>
       <td class="mono right">${fRfull(r[5])}</td>
-      <td><span class="pill pill-gray">${r[6]}</span></td>
-      <td>${r[7]}</td>
-      <td style="font-size:11px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r[8]}">${r[8]}</td>
-      <td class="mono" style="color:var(--ink4)">${r[9]}</td>
+      <td><span class="pill pill-gray">${escHTML(r[6])}</span></td>
+      <td>${escHTML(r[7])}</td>
+      <td style="font-size:11px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escAttr(r[8])}">${escHTML(r[8])}</td>
+      <td class="mono" style="color:var(--ink4)">${escHTML(r[9])}</td>
     </tr>`).join('');
 
   document.getElementById('pagInfo').textContent=`${start+1}–${Math.min(start+PER_PAGE,total)} de ${fN(total)} registros`;
@@ -2457,11 +2478,11 @@ function renderRetidos(){
       : '<span style="color:var(--ink4)">—</span>';
     return '<tr>'
       + '<td style="color:var(--ink4);font-size:11px">' + (i+1) + '</td>'
-      + '<td style="font-weight:500;max-width:280px">' + r.cliente + '</td>'
-      + '<td style="color:var(--ink3)">' + r.resp + '</td>'
-      + '<td><span style="font-size:11px;color:var(--ink3)">' + (r.data||'—') + '</span></td>'
+      + '<td style="font-weight:500;max-width:280px">' + escHTML(r.cliente) + '</td>'
+      + '<td style="color:var(--ink3)">' + escHTML(r.resp) + '</td>'
+      + '<td><span style="font-size:11px;color:var(--ink3)">' + escHTML(r.data||'—') + '</span></td>'
       + '<td>' + mrrDisplay + '</td>'
-      + '<td><span class="pill ' + statusClass + '">' + statusLabel + '</span></td>'
+      + '<td><span class="pill ' + statusClass + '">' + escHTML(statusLabel) + '</span></td>'
       + '</tr>';
   });
   tbody.innerHTML = rows.join('');
@@ -2716,10 +2737,18 @@ function computeExecutiveMetrics(ins){
   var completeYear = rawYears.length > 1 ? rawYears[rawYears.length - 2] : currentYear;
   var prevCompleteYear = rawYears.length > 2 ? rawYears[rawYears.length - 3] : completeYear - 1;
 
-  var nrrYears = years.filter(function(y){ return activeMRRByYear[y - 1] > 0 && activeMRRByYear[y] > 0; });
+  var nrrByYear = {};
+  var churnMrrImpactByYear = {};
+  var nrrYears = years.filter(function(y){ return activeMRRByYear[y - 1] > 0; });
+  nrrYears.forEach(function(y){
+    var prevBase = activeMRRByYear[y - 1] || 0;
+    var lostMRR = getYearChurnMRR(y);
+    churnMrrImpactByYear[y] = prevBase ? Math.round(lostMRR / prevBase * 1000) / 10 : 0;
+    nrrByYear[y] = Math.round((100 - churnMrrImpactByYear[y]) * 10) / 10;
+  });
   var lastNrrYear = nrrYears.indexOf(completeYear) >= 0 ? completeYear : (nrrYears[nrrYears.length - 1] || currentYear);
-  var lastNRR = activeMRRByYear[lastNrrYear - 1] ? Math.round(activeMRRByYear[lastNrrYear] / activeMRRByYear[lastNrrYear - 1] * 100) : 100;
-  var currentNRR = activeMRRByYear[currentYear - 1] ? Math.round(activeMRRByYear[currentYear] / activeMRRByYear[currentYear - 1] * 1000) / 10 : lastNRR;
+  var lastNRR = nrrByYear[lastNrrYear] != null ? nrrByYear[lastNrrYear] : 100;
+  var currentNRR = nrrByYear[currentYear] != null ? nrrByYear[currentYear] : lastNRR;
 
   var prevBaseContracts = activeContractsByYear[completeYear - 1] || activeContractsByYear[completeYear] || 0;
   var prevBaseMRR = activeMRRByYear[completeYear - 1] || activeMRRByYear[completeYear] || 0;
@@ -2742,6 +2771,8 @@ function computeExecutiveMetrics(ins){
   return {
     activeMRRByYear: activeMRRByYear,
     activeContractsByYear: activeContractsByYear,
+    nrrByYear: nrrByYear,
+    churnMrrImpactByYear: churnMrrImpactByYear,
     nrrYears: nrrYears,
     lastNrrYear: lastNrrYear,
     lastNRR: lastNRR,
@@ -2771,7 +2802,9 @@ function renderExecutivo() {
 
   // ── Headline ─────────────────────────────────────────
   const motivoLabel = ins.topMotivoVol[0].charAt(0)+ins.topMotivoVol[0].slice(1).toLowerCase();
-  const headlineText = 'O churn está concentrado em <strong>' + motivoLabel + '</strong>, '
+  const motivoLabelSafe = escHTML(motivoLabel);
+  const topVendSafe = escHTML(ins.topVend[0].split(' ').slice(0,2).map(function(w){ return w.charAt(0)+w.slice(1).toLowerCase(); }).join(' '));
+  const headlineText = 'O churn está concentrado em <strong>' + motivoLabelSafe + '</strong>, '
     + 'representando <em>' + Math.round(ins.topMotivoVol[1]/ins.churns.length*100) + '%</em> do total '
     + 'com impacto de <em>' + fRk(ins.topMotivoMRR[1]) + '/mês</em>. '
     + ins.evitPct + '% do churn é evitável com onboarding e suporte adequados.';
@@ -2788,7 +2821,7 @@ function renderExecutivo() {
     {
       cls: 'critical',
       label: 'Principal causa de churn',
-      title: motivoLabel,
+      title: motivoLabelSafe,
       sub: ins.topMotivoVol[1] + ' contratos perdidos · ' + fRk(ins.motivoMRR[ins.topMotivoVol[0]]) + '/mês de impacto direto na receita.',
       badge: Math.round(ins.topMotivoVol[1]/ins.churns.length*100) + '% do churn total'
     },
@@ -2803,7 +2836,7 @@ function renderExecutivo() {
     {
       cls: 'warning',
       label: 'Vendedor em destaque',
-      title: ins.topVend[0].split(' ').slice(0,2).map(function(w){ return w.charAt(0)+w.slice(1).toLowerCase(); }).join(' '),
+      title: topVendSafe,
       sub: ins.topVend[1] + ' churns confirmados. '
          + fRk(ins.vendMRR[ins.topVend[0]]) + '/mês perdido. Analisar perfil da carteira e qualidade das vendas.',
       badge: ins.topVend[1] + ' churns confirmados'
@@ -2838,7 +2871,7 @@ function renderExecutivo() {
     });
   } else {
     priorities.push({
-      cls:'p1', title:'Atacar motivo principal: ' + motivoLabel,
+      cls:'p1', title:'Atacar motivo principal: ' + motivoLabelSafe,
       desc:ins.topMotivoVol[1] + ' contratos perdidos por este motivo. Requer ação imediata.',
       tag:'Impacto alto · Operacional'
     });
@@ -2846,7 +2879,7 @@ function renderExecutivo() {
 
   // P2: vendedor action
   priorities.push({
-    cls:'p2', title:'Revisão da carteira de ' + ins.topVend[0].split(' ')[0],
+    cls:'p2', title:'Revisão da carteira de ' + escHTML(ins.topVend[0].split(' ')[0]),
     desc:'Vendedor com maior concentração de churns (' + ins.topVend[1] + ' casos, '
        + fRk(ins.vendMRR[ins.topVend[0]]) + '/mês). '
        + 'Revisar perfil de clientes captados e qualidade do handoff para CS.',
@@ -2985,49 +3018,48 @@ function renderExecutivo() {
     + '<span class="trend-badge ' + mrrBadgeClass + '" style="min-width:52px;justify-content:center">' + mrrArrow + ' ' + Math.abs(ins.mrrTrendPct) + '%</span>'
     + '</div>';
 
-  // ── NRR per year ────────────────────────────────────
-  var mrrAtivoPorAno = exec.activeMRRByYear;
+  // ── Churn real MRR impact per year ───────────────────
   var nrrRows = exec.nrrYears.map(function(y){
-    var cur  = mrrAtivoPorAno[y]   || 0;
-    var prev = mrrAtivoPorAno[y-1] || cur;
-    var nrr  = prev ? Math.round(cur/prev*100) : 100;
-    var cls  = nrr>=100?'zone-green':nrr>=90?'zone-yellow':'zone-red';
-    var dotCls = nrr>=100?'dot-green':nrr>=90?'dot-yellow':'dot-red';
-    var label = nrr>=100?'Crescendo':'Encolhendo';
+    var impact = exec.churnMrrImpactByYear[y] != null ? exec.churnMrrImpactByYear[y] : 0;
+    var lost = getYearChurnMRR(y);
+    var base = exec.activeMRRByYear[y-1] || 0;
+    var cls  = impact<=10?'zone-green':impact<=15?'zone-yellow':'zone-red';
+    var dotCls = impact<=10?'dot-green':impact<=15?'dot-yellow':'dot-red';
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--bdr2)">'
       + '<span style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--ink3)">'+y+'</span>'
       + '<div class="bench-zone">'
       + '<div class="bench-dot '+dotCls+'"></div>'
-      + '<span class="'+cls+'" style="font-size:13px;font-weight:800">'+nrr+'%</span>'
-      + '<span style="font-size:10px;color:var(--ink4)">NRR</span>'
+      + '<span class="'+cls+'" style="font-size:13px;font-weight:800">'+String(impact).replace('.', ',')+'%</span>'
+      + '<span style="font-size:10px;color:var(--ink4)">consumido</span>'
       + '</div>'
+      + '<span style="font-size:10px;color:var(--ink4);min-width:92px;text-align:right">R$ '+Math.round(lost/1000)+'k de R$ '+Math.round(base/1000)+'k</span>'
       + '</div>';
   }).join('');
   var nrrEl = document.getElementById('nrrContent');
   if(nrrEl){
-    var lastNRR = exec.lastNRR;
-    var nrrCls  = lastNRR>=100?'zone-green':lastNRR>=90?'zone-yellow':'zone-red';
+    var lastImpact = exec.churnMrrImpactByYear[exec.lastNrrYear] != null ? exec.churnMrrImpactByYear[exec.lastNrrYear] : 0;
+    var impactCls  = lastImpact<=10?'zone-green':lastImpact<=15?'zone-yellow':'zone-red';
     nrrEl.innerHTML = '<div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">'
-      + '<div class="nrr-ring" style="border-color:'+( lastNRR>=100?'#3a6b4a':lastNRR>=90?'#e8a930':'var(--red2)')+'">'
-      + '<span class="nrr-val '+nrrCls+'">'+lastNRR+'%</span>'
+      + '<div class="nrr-ring" style="border-color:'+( lastImpact<=10?'#3a6b4a':lastImpact<=15?'#e8a930':'var(--red2)')+'">'
+      + '<span class="nrr-val '+impactCls+'">'+String(lastImpact).replace('.', ',')+'%</span>'
       + '<span class="nrr-lbl">'+exec.lastNrrYear+'</span>'
       + '</div>'
       + '<div style="flex:1">'
       + '<div style="font-size:12px;color:var(--ink3);line-height:1.6">'
-      + (lastNRR>=100
-        ? '<strong style="color:#3a6b4a">Base crescendo</strong> - MRR ativo de '+exec.lastNrrYear+' é superior ao de '+(exec.lastNrrYear-1)+' mesmo com churns.'
-        : lastNRR>=90
-          ? '<strong style="color:#7a5c1e">Atenção</strong> - receita encolheu '+Math.abs(100-lastNRR)+'% vs '+(exec.lastNrrYear-1)+'. Expansões não estão cobrindo o churn.'
-          : '<strong style="color:var(--red2)">Crítico</strong> - receita encolheu '+Math.abs(100-lastNRR)+'% vs '+(exec.lastNrrYear-1)+'. Ação urgente necessária.')
+      + (lastImpact<=10
+        ? '<strong style="color:#3a6b4a">Impacto controlado</strong> - churn real consumiu '+String(lastImpact).replace('.', ',')+'% do MRR base de '+(exec.lastNrrYear-1)+'.'
+        : lastImpact<=15
+          ? '<strong style="color:#7a5c1e">Atenção</strong> - churn real consumiu '+String(lastImpact).replace('.', ',')+'% do MRR base de '+(exec.lastNrrYear-1)+'.'
+          : '<strong style="color:var(--red2)">Crítico</strong> - churn real consumiu '+String(lastImpact).replace('.', ',')+'% do MRR base de '+(exec.lastNrrYear-1)+'. Ação urgente necessária.')
       + '</div></div></div>'
       + nrrRows
-      + '<div style="font-size:9px;color:var(--ink4);margin-top:8px">Benchmark: NRR acima de 100% = excelente · 85-100% = atenção · abaixo de 85% = crítico</div>';
+      + '<div style="font-size:9px;color:var(--ink4);margin-top:8px">Defesa da métrica: churn real % mede quantidade de contratos; este indicador mede impacto financeiro. Eles diferem quando os contratos perdidos têm ticket acima ou abaixo da média.</div>';
   }
 
   // ── Benchmark SaaS B2B ───────────────────────────────
   var crAdjAtual  = exec.crAdj;
   var crMRRAtual  = exec.crMRR;
-  var nrrAtual    = exec.lastNRR;
+  var nrrAtual    = exec.churnMrrImpactByYear[exec.lastNrrYear] != null ? exec.churnMrrImpactByYear[exec.lastNrrYear] : 0;
 
   function benchZone(val, thresholds){
     // thresholds = [{max, cls, dotCls, label}]
@@ -3039,7 +3071,7 @@ function renderExecutivo() {
 
   var crZone  = benchZone(crAdjAtual,  [{max:5,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:10,cls:'zone-yellow',dotCls:'dot-yellow',label:'Bom'},{max:15,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
   var mrrZone = benchZone(crMRRAtual,  [{max:12,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:24,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
-  var nrrZone = benchZone(100-nrrAtual,[{max:0,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:10,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
+  var nrrZone = benchZone(nrrAtual,[{max:10,cls:'zone-green',dotCls:'dot-green',label:'Controlado'},{max:15,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
 
   function benchRow(label, value, unit, zone, refBom, refCrit){
     var badgeBg  = zone.cls==='zone-green'?'var(--moss5)':zone.cls==='zone-yellow'?'var(--amber2)':'var(--red3)';
@@ -3069,7 +3101,7 @@ function renderExecutivo() {
     benchEl.innerHTML =
       benchRow('Churn Rate Ajustado '+exec.completeYear, crAdjAtual.toFixed(1), '%', crZone, '<5%', '>15%')
       + benchRow('Churn de MRR '+exec.completeYear, crMRRAtual.toFixed(1), '%', mrrZone, '<12%', '>24%')
-      + benchRow('NRR (retenção líquida)', nrrAtual, '%', nrrZone, '>100%', '<85%')
+      + benchRow('MRR consumido por churn real', String(nrrAtual).replace('.', ','), '%', nrrZone, '<10%', '>15%')
       + '<div style="margin-top:12px;padding:10px;background:var(--moss6);border-radius:6px;font-size:11px;color:var(--ink2);line-height:1.6">'
       + '<strong>Posição Multsoft '+exec.completeYear+':</strong> Churn rate ajustado de '+crAdjAtual.toFixed(1).replace('.', ',')+'% está na zona <span class="'+crZone.cls+'">'+crZone.label+'</span> do mercado SaaS B2B. '
       + 'O churn MRR de '+crMRRAtual.toFixed(1).replace('.', ',')+'% ao ano está <span class="'+mrrZone.cls+'">'+mrrZone.label.toLowerCase()+'</span>.'
@@ -3116,7 +3148,7 @@ function renderExecutivo() {
       + '</div></div>'
       + '<div style="margin-top:12px;padding:10px;background:var(--moss6);border-radius:6px;font-size:11px;color:var(--ink2);line-height:1.55">'
       + '<strong>Lógica:</strong> Projeção '+exec.currentYear+' baseada no ritmo real dos primeiros '+mesesAtual+' meses (R$'+ritmoMensalAtual.toLocaleString('pt-BR')+'/mês). '
-      + 'MRR Ativo atual: R$'+Math.round(exec.currentActiveMRR/1000)+'k - NRR parcial '+exec.currentYear+': '+String(exec.currentNRR).replace('.', ',')+'%.'
+      + 'MRR Ativo atual: R$'+Math.round(exec.currentActiveMRR/1000)+'k - retenção parcial '+exec.currentYear+': '+String(exec.currentNRR).replace('.', ',')+'%.'
       + '</div>';
   }
 
@@ -3128,7 +3160,7 @@ function renderExecutivo() {
     const pos = i < 3 ? 'r'+(i+1) : 'rn';
     const pct  = (r[4]/maxClienteMRR*100).toFixed(0);
     return '<tr><td><span class="rank-pos '+pos+'">'+(i+1)+'</span></td>'
-      + '<td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+r[0]+'">'+r[0]+'</td>'
+      + '<td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+escAttr(r[0])+'">'+escHTML(r[0])+'</td>'
       + '<td><div style="font-weight:700;font-family:JetBrains Mono,monospace;color:var(--red2)">'+fRk(r[4])+'</div>'
       + '<div class="rank-bar-bg"><div class="rank-bar-fill" style="width:'+pct+'%;background:var(--red2)"></div></div></td>'
       + '</tr>';
@@ -3143,9 +3175,9 @@ function renderExecutivo() {
     const mrr  = ins.motivoMRR[m] || 0;
     const pct  = (cnt/maxMot*100).toFixed(0);
     const label = m.charAt(0)+m.slice(1).toLowerCase();
-    return '<tr data-drill="motivo" data-val="'+m+'" onclick="drillMotivo(\''+m+'\')">'
+    return '<tr data-drill="motivo" data-val="'+escAttr(m)+'" onclick="drillMotivo(\''+escJSString(m)+'\')">'
       + '<td><span class="rank-pos '+pos+'">'+(i+1)+'</span></td>'
-      + '<td style="font-size:11px">'+label+'</td>'
+      + '<td style="font-size:11px">'+escHTML(label)+'</td>'
       + '<td><div style="font-weight:700">'+cnt+'</div>'
       + '<div class="rank-bar-bg"><div class="rank-bar-fill" style="width:'+pct+'%"></div></div></td>'
       + '<td style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--red2)">'+fRk(mrr)+'</td>'
@@ -3161,9 +3193,9 @@ function renderExecutivo() {
     const mrr  = ins.vendMRR[v] || 0;
     const pct  = (cnt/maxVend*100).toFixed(0);
     const shortName = v.split(' ').slice(0,2).join(' ');
-    return '<tr data-drill="vendedor" data-val="'+v+'" onclick="drillVendedor(\''+v+'\')">'
+    return '<tr data-drill="vendedor" data-val="'+escAttr(v)+'" onclick="drillVendedor(\''+escJSString(v)+'\')">'
       + '<td><span class="rank-pos '+pos+'">'+(i+1)+'</span></td>'
-      + '<td style="font-size:11px">'+shortName+'</td>'
+      + '<td style="font-size:11px">'+escHTML(shortName)+'</td>'
       + '<td><div style="font-weight:700">'+cnt+'</div>'
       + '<div class="rank-bar-bg"><div class="rank-bar-fill" style="width:'+pct+'%"></div></div></td>'
       + '<td style="font-family:JetBrains Mono,monospace;font-size:11px;color:var(--red2)">'+fRk(mrr)+'</td>'
@@ -3200,8 +3232,8 @@ function drillMotivo(motivo) {
       return '<div style="display:flex;justify-content:space-between;align-items:center;'
         +'padding:8px 12px;background:var(--w);border-radius:6px;border:1px solid var(--bdr)">'
         + '<div>'
-        + '<div style="font-size:12px;font-weight:600;color:var(--ink)">' + r[0] + '</div>'
-        + '<div style="font-size:10px;color:var(--ink4)">' + r[9] + ' · ' + r[8].split(' ')[0] + '</div>'
+        + '<div style="font-size:12px;font-weight:600;color:var(--ink)">' + escHTML(r[0]) + '</div>'
+        + '<div style="font-size:10px;color:var(--ink4)">' + escHTML(r[9]) + ' · ' + escHTML(r[8].split(' ')[0]) + '</div>'
         + '</div>'
         + '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:var(--red2)">' + fRk(r[4]) + '/mês</div>'
         + '</div>';
@@ -3237,8 +3269,8 @@ function drillVendedor(vend) {
       return '<div style="display:flex;justify-content:space-between;align-items:center;'
         +'padding:8px 12px;background:var(--w);border-radius:6px;border:1px solid var(--bdr)">'
         + '<div>'
-        + '<div style="font-size:12px;font-weight:600;color:var(--ink)">' + r[0] + '</div>'
-        + '<div style="font-size:10px;color:var(--ink4)">' + motivoLabel + ' · ' + r[9] + '</div>'
+        + '<div style="font-size:12px;font-weight:600;color:var(--ink)">' + escHTML(r[0]) + '</div>'
+        + '<div style="font-size:10px;color:var(--ink4)">' + escHTML(motivoLabel) + ' · ' + escHTML(r[9]) + '</div>'
         + '</div>'
         + '<div style="font-family:JetBrains Mono,monospace;font-size:12px;font-weight:700;color:var(--red2)">' + fRk(r[4]) + '/mês</div>'
         + '</div>';
@@ -4511,12 +4543,12 @@ function renderABCList() {
         +'background:'+bgColors[r.cls]+';color:'+txtColors[r.cls]+'">'+r.cls+'</span>'
       // Client info
       + '<div style="min-width:0">'
-        + '<div style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+r.c+'">'+r.c+'</div>'
+        + '<div style="font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="'+escAttr(r.c)+'">'+escHTML(r.c)+'</div>'
         + '<div style="display:flex;align-items:center;gap:6px;margin-top:4px">'
           + '<div style="height:4px;width:100%;background:var(--bdr2);border-radius:2px;max-width:160px">'
             + '<div style="width:'+pct+'%;height:100%;background:'+colors[r.cls]+';border-radius:2px;opacity:.85"></div>'
           + '</div>'
-          + '<span style="font-size:9px;color:var(--ink4);white-space:nowrap">'+vendShort+'</span>'
+          + '<span style="font-size:9px;color:var(--ink4);white-space:nowrap">'+escHTML(vendShort)+'</span>'
         + '</div>'
       + '</div>'
       // MRR
@@ -4546,7 +4578,8 @@ function renderAtivosSummary() {
 
   var nrrBase = AGG.mrrAudit.find(function(r){ return r.y===2025; });
   var nrr    = nrrBase && nrrBase.sheet ? Math.round(totalF/nrrBase.sheet*1000)/10 : 111.3;
-  var suffix = isFiltered ? ' (' + F.vendedor.split(' ')[0] + ')' : '';
+  var vendFirst = isFiltered ? F.vendedor.split(' ')[0] : '';
+  var suffix = isFiltered ? ' (' + escHTML(vendFirst) + ')' : '';
   var posLabel = HIST_CONTRATOS.length ? 'preview base crua' : 'posição base local';
 
   // ── Render KPI cards dynamically ────────────────────────
@@ -4559,12 +4592,12 @@ function renderAtivosSummary() {
 
     kpiEl.innerHTML =
       '<div class="kpi k-moss">'
-        +'<div class="kl">Contratos Ativos'+suffix+' <span class="tip-icon" data-tip="Total de contratos sem Data Cancelamento na base crua. '+(isFiltered?'Filtrado por vendedor '+F.vendedor.split(' ')[0]+'.':'A base histórica mantém também os contratos cancelados para cálculos por período.')+'">i</span></div>'
+        +'<div class="kl">Contratos Ativos'+suffix+' <span class="tip-icon" data-tip="Total de contratos sem Data Cancelamento na base crua. '+(isFiltered?'Filtrado por vendedor '+escAttr(vendFirst)+'.':'A base histórica mantém também os contratos cancelados para cálculos por período.')+'">i</span></div>'
         +'<div class="kv">'+cntTotal+'</div>'
         +'<div class="ks">'+posLabel+(hist.cancelados?' · '+hist.cancelados+' cancelados históricos':'')+'</div>'
       +'</div>'
       +'<div class="kpi">'
-        +'<div class="kl">MRR Ativo'+suffix+' <span class="tip-icon" data-tip="Soma do Valor/Mês de todos os contratos ativos'+(isFiltered?' da carteira de '+F.vendedor.split(' ')[0]:'')+'">i</span></div>'
+        +'<div class="kl">MRR Ativo'+suffix+' <span class="tip-icon" data-tip="Soma do Valor/Mês de todos os contratos ativos'+(isFiltered?' da carteira de '+escAttr(vendFirst):'')+'">i</span></div>'
         +'<div class="kv">'+mrrFmt+'</div>'
         +'<div class="ks">receita mensal recorrente</div>'
       +'</div>'
@@ -4579,7 +4612,7 @@ function renderAtivosSummary() {
         +'<div class="ks">R$ '+clsAMrr+'k = '+clsAPct+'% do MRR</div>'
       +'</div>'
       +'<div class="kpi">'
-        +'<div class="kl">NRR Parcial 2026 <span class="tip-icon" data-tip="NRR = MRR Ativo hoje ÷ MRR Ativo 2025 × 100. No preview, o numerador vem da base crua sem Data Cancelamento. Acima de 100% = base crescendo mesmo com churns.">i</span></div>'
+        +'<div class="kl">MRR vs 2025 <span class="tip-icon" data-tip="Comparação operacional: MRR ativo hoje ÷ MRR ativo de 2025 × 100. Mede crescimento da base ativa, não NRR contábil.">i</span></div>'
         +'<div class="kv" style="color:#3a6b4a">'+nrr+'%</div>'
         +'<div class="ks">vs MRR ativo de 2025</div>'
       +'</div>';
@@ -4648,7 +4681,7 @@ function renderAtivos() {
       var vendMRR = vendChurns.reduce(function(s,r){return s+r[4];},0);
       cohortAlert.innerHTML =
         '<div style="padding:16px;text-align:center">'
-        +'<div style="font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:8px">'+vendName+'</div>'
+        +'<div style="font-size:13px;font-weight:600;color:var(--ink2);margin-bottom:8px">'+escHTML(vendName)+'</div>'
         +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;max-width:280px;margin:0 auto">'
         +'<div style="padding:10px;background:var(--red3);border-radius:8px">'
           +'<div style="font-size:20px;font-weight:800;color:var(--red2)">'+vendChurns.length+'</div>'

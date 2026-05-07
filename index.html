@@ -2648,10 +2648,126 @@ function computeInsights() {
   };
 }
 
+function getExecutiveActiveMRRByYear(){
+  var out = {};
+  if(BASE_HISTORICA && BASE_HISTORICA.length){
+    BASE_HISTORICA.forEach(function(r){ out[r.y] = r.mrr || 0; });
+    return out;
+  }
+  if(AGG && AGG.mrrAudit){
+    AGG.mrrAudit.forEach(function(r){ out[r.y] = r.sheet || r.calc || 0; });
+  }
+  return out;
+}
+
+function getExecutiveActiveContractsByYear(){
+  var out = {};
+  if(BASE_HISTORICA && BASE_HISTORICA.length){
+    BASE_HISTORICA.forEach(function(r){ out[r.y] = r.contratos || 0; });
+    return out;
+  }
+  if(AGG && AGG.anos && AGG.baseAtiva){
+    AGG.anos.forEach(function(y,i){ out[y] = AGG.baseAtiva[i] || 0; });
+  }
+  return out;
+}
+
+function getYearChurnRows(year){
+  return RAW.filter(function(r){ return r[2] === 'Sim' && r[3] === year; });
+}
+
+function getYearChurnMRR(year){
+  return getYearChurnRows(year).reduce(function(s,r){ return s + (r[4] || 0); }, 0);
+}
+
+function getYearCancelRows(year){
+  return RAW.filter(function(r){ return r[3] === year; });
+}
+
+function getYearCancelMRR(year){
+  return getYearCancelRows(year).reduce(function(s,r){ return s + (r[4] || 0); }, 0);
+}
+
+function getMaxMonthForYear(year){
+  var maxMonth = 0;
+  RAW.forEach(function(r){
+    if(r[3] !== year) return;
+    var ts = parsePtDate(r[9]);
+    if(!ts) return;
+    var d = new Date(ts);
+    maxMonth = Math.max(maxMonth, d.getMonth() + 1);
+  });
+  return maxMonth || 12;
+}
+
+function monthShortPt(month){
+  var labels = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+  return labels[Math.max(0, Math.min(11, month - 1))] || '';
+}
+
+function computeExecutiveMetrics(ins){
+  var activeMRRByYear = getExecutiveActiveMRRByYear();
+  var activeContractsByYear = getExecutiveActiveContractsByYear();
+  var years = Object.keys(activeMRRByYear).map(Number).filter(function(y){ return activeMRRByYear[y] > 0; }).sort(function(a,b){ return a-b; });
+  if(!years.length) years = [...new Set(RAW.map(function(r){ return r[3]; }))].filter(Boolean).sort(function(a,b){ return a-b; });
+
+  var rawYears = [...new Set(RAW.map(function(r){ return r[3]; }))].filter(Boolean).sort(function(a,b){ return a-b; });
+  var currentYear = rawYears[rawYears.length - 1] || years[years.length - 1] || new Date().getFullYear();
+  var completeYear = rawYears.length > 1 ? rawYears[rawYears.length - 2] : currentYear;
+  var prevCompleteYear = rawYears.length > 2 ? rawYears[rawYears.length - 3] : completeYear - 1;
+
+  var nrrYears = years.filter(function(y){ return activeMRRByYear[y - 1] > 0 && activeMRRByYear[y] > 0; });
+  var lastNrrYear = nrrYears.indexOf(completeYear) >= 0 ? completeYear : (nrrYears[nrrYears.length - 1] || currentYear);
+  var lastNRR = activeMRRByYear[lastNrrYear - 1] ? Math.round(activeMRRByYear[lastNrrYear] / activeMRRByYear[lastNrrYear - 1] * 100) : 100;
+  var currentNRR = activeMRRByYear[currentYear - 1] ? Math.round(activeMRRByYear[currentYear] / activeMRRByYear[currentYear - 1] * 1000) / 10 : lastNRR;
+
+  var prevBaseContracts = activeContractsByYear[completeYear - 1] || activeContractsByYear[completeYear] || 0;
+  var prevBaseMRR = activeMRRByYear[completeYear - 1] || activeMRRByYear[completeYear] || 0;
+  var completeRows = getYearChurnRows(completeYear);
+  var completeMRR = getYearChurnMRR(completeYear);
+  var crAdj = prevBaseContracts ? completeRows.length / prevBaseContracts * 100 : 0;
+  var crMRR = prevBaseMRR ? completeMRR / prevBaseMRR * 100 : 0;
+
+  var currentRows = getYearCancelRows(currentYear);
+  var currentYtdMRR = getYearCancelMRR(currentYear);
+  var currentMonths = Math.max(1, Math.min(12, getMaxMonthForYear(currentYear)));
+  var ritmoMensal = Math.round(currentYtdMRR / currentMonths);
+  var projAnnual = ritmoMensal * 12;
+  var prevMRR = getYearCancelMRR(prevCompleteYear);
+  var lastCompleteMRR = getYearCancelMRR(completeYear);
+  var evitPct = ins && isFinite(ins.evitPct) ? ins.evitPct : 0;
+  var avoidMRRAnnual = Math.round(lastCompleteMRR * evitPct / 100);
+  var currentActiveMRR = activeMRRByYear[currentYear] || (getABCStats().total || 0);
+
+  return {
+    activeMRRByYear: activeMRRByYear,
+    activeContractsByYear: activeContractsByYear,
+    nrrYears: nrrYears,
+    lastNrrYear: lastNrrYear,
+    lastNRR: lastNRR,
+    currentNRR: currentNRR,
+    currentYear: currentYear,
+    completeYear: completeYear,
+    prevCompleteYear: prevCompleteYear,
+    crAdj: crAdj,
+    crMRR: crMRR,
+    currentRows: currentRows,
+    currentYtdMRR: currentYtdMRR,
+    currentMonths: currentMonths,
+    ritmoMensal: ritmoMensal,
+    projAnnual: projAnnual,
+    prevMRR: prevMRR,
+    lastCompleteMRR: lastCompleteMRR,
+    avoidMRRAnnual: avoidMRRAnnual,
+    currentActiveMRR: currentActiveMRR
+  };
+}
+
 // ── Render Executive Page ────────────────────────────────
 function renderExecutivo() {
   const ins = computeInsights();
   if(!ins){ document.getElementById('execText').textContent='Sem dados suficientes.'; return; }
+  const exec = computeExecutiveMetrics(ins);
 
   // ── Headline ─────────────────────────────────────────
   const motivoLabel = ins.topMotivoVol[0].charAt(0)+ins.topMotivoVol[0].slice(1).toLowerCase();
@@ -2870,13 +2986,8 @@ function renderExecutivo() {
     + '</div>';
 
   // ── NRR per year ────────────────────────────────────
-  var mrrAtivoPorAno = {
-    2020:343671, 2021:432732, 2022:520290,
-    2023:651955, 2024:778419, 2025:1047681,
-    2026:1166014  // Posição real em 08/04/2026
-  };
-  var nrrAnos = [2021,2022,2023,2024,2025,2026];
-  var nrrRows = nrrAnos.map(function(y){
+  var mrrAtivoPorAno = exec.activeMRRByYear;
+  var nrrRows = exec.nrrYears.map(function(y){
     var cur  = mrrAtivoPorAno[y]   || 0;
     var prev = mrrAtivoPorAno[y-1] || cur;
     var nrr  = prev ? Math.round(cur/prev*100) : 100;
@@ -2894,30 +3005,29 @@ function renderExecutivo() {
   }).join('');
   var nrrEl = document.getElementById('nrrContent');
   if(nrrEl){
-    var lastNRR = Math.round(mrrAtivoPorAno[2025]/mrrAtivoPorAno[2024]*100);
+    var lastNRR = exec.lastNRR;
     var nrrCls  = lastNRR>=100?'zone-green':lastNRR>=90?'zone-yellow':'zone-red';
     nrrEl.innerHTML = '<div style="display:flex;align-items:center;gap:16px;margin-bottom:14px">'
       + '<div class="nrr-ring" style="border-color:'+( lastNRR>=100?'#3a6b4a':lastNRR>=90?'#e8a930':'var(--red2)')+'">'
       + '<span class="nrr-val '+nrrCls+'">'+lastNRR+'%</span>'
-      + '<span class="nrr-lbl">2025</span>'
+      + '<span class="nrr-lbl">'+exec.lastNrrYear+'</span>'
       + '</div>'
       + '<div style="flex:1">'
       + '<div style="font-size:12px;color:var(--ink3);line-height:1.6">'
       + (lastNRR>=100
-        ? '<strong style="color:#3a6b4a">Base crescendo</strong> — MRR ativo de 2025 é superior ao de 2024 mesmo com churns.'
+        ? '<strong style="color:#3a6b4a">Base crescendo</strong> - MRR ativo de '+exec.lastNrrYear+' é superior ao de '+(exec.lastNrrYear-1)+' mesmo com churns.'
         : lastNRR>=90
-          ? '<strong style="color:#7a5c1e">Atenção</strong> — receita encolheu '+Math.abs(100-lastNRR)+'% vs 2024. Expansões não estão cobrindo o churn.'
-          : '<strong style="color:var(--red2)">Crítico</strong> — receita encolheu '+Math.abs(100-lastNRR)+'% vs 2024. Ação urgente necessária.')
+          ? '<strong style="color:#7a5c1e">Atenção</strong> - receita encolheu '+Math.abs(100-lastNRR)+'% vs '+(exec.lastNrrYear-1)+'. Expansões não estão cobrindo o churn.'
+          : '<strong style="color:var(--red2)">Crítico</strong> - receita encolheu '+Math.abs(100-lastNRR)+'% vs '+(exec.lastNrrYear-1)+'. Ação urgente necessária.')
       + '</div></div></div>'
       + nrrRows
       + '<div style="font-size:9px;color:var(--ink4);margin-top:8px">Benchmark: NRR acima de 100% = excelente · 85-100% = atenção · abaixo de 85% = crítico</div>';
   }
 
   // ── Benchmark SaaS B2B ───────────────────────────────
-  // Use 2025 data (most recent full year)
-  var crAdj2025  = 7.10;  // Churn rate ajustado 2025
-  var crMRR2025  = 6.63;  // Churn MRR 2025 (anual)
-  var nrr2025    = lastNRR;
+  var crAdjAtual  = exec.crAdj;
+  var crMRRAtual  = exec.crMRR;
+  var nrrAtual    = exec.lastNRR;
 
   function benchZone(val, thresholds){
     // thresholds = [{max, cls, dotCls, label}]
@@ -2927,9 +3037,9 @@ function renderExecutivo() {
     return thresholds[thresholds.length-1];
   }
 
-  var crZone  = benchZone(crAdj2025,  [{max:5,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:10,cls:'zone-yellow',dotCls:'dot-yellow',label:'Bom'},{max:15,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
-  var mrrZone = benchZone(crMRR2025,  [{max:12,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:24,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
-  var nrrZone = benchZone(100-nrr2025,[{max:0,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:10,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
+  var crZone  = benchZone(crAdjAtual,  [{max:5,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:10,cls:'zone-yellow',dotCls:'dot-yellow',label:'Bom'},{max:15,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
+  var mrrZone = benchZone(crMRRAtual,  [{max:12,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:24,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
+  var nrrZone = benchZone(100-nrrAtual,[{max:0,cls:'zone-green',dotCls:'dot-green',label:'Excelente'},{max:10,cls:'zone-yellow',dotCls:'dot-yellow',label:'Atenção'},{max:999,cls:'zone-red',dotCls:'dot-red',label:'Crítico'}]);
 
   function benchRow(label, value, unit, zone, refBom, refCrit){
     var badgeBg  = zone.cls==='zone-green'?'var(--moss5)':zone.cls==='zone-yellow'?'var(--amber2)':'var(--red3)';
@@ -2948,8 +3058,8 @@ function renderExecutivo() {
         + '<div style="flex:1;background:var(--red2);border-radius:3px;opacity:.75"></div>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;font-size:9px;margin-top:4px;padding:0 2px">'
-        + '<span style="color:#3a6b4a;font-weight:600">Excelente (&lt;'+refBom+')</span>'
-        + '<span style="color:var(--red2);font-weight:600">Crítico (&gt;'+refCrit+')</span>'
+        + '<span style="color:#3a6b4a;font-weight:600">Excelente: '+refBom+'</span>'
+        + '<span style="color:var(--red2);font-weight:600">Crítico: '+refCrit+'</span>'
       + '</div>'
     + '</div>';
   }
@@ -2957,33 +3067,25 @@ function renderExecutivo() {
   var benchEl = document.getElementById('benchContent');
   if(benchEl){
     benchEl.innerHTML =
-      benchRow('Churn Rate Ajustado (anual)', crAdj2025.toFixed(1), '%', crZone, '5%', '15%')
-      + benchRow('Churn de MRR (anual)', crMRR2025.toFixed(1), '%', mrrZone, '12%', '24%')
-      + benchRow('NRR (retenção líquida)', nrr2025, '%', nrrZone, '100%', '85%')
+      benchRow('Churn Rate Ajustado '+exec.completeYear, crAdjAtual.toFixed(1), '%', crZone, '<5%', '>15%')
+      + benchRow('Churn de MRR '+exec.completeYear, crMRRAtual.toFixed(1), '%', mrrZone, '<12%', '>24%')
+      + benchRow('NRR (retenção líquida)', nrrAtual, '%', nrrZone, '>100%', '<85%')
       + '<div style="margin-top:12px;padding:10px;background:var(--moss6);border-radius:6px;font-size:11px;color:var(--ink2);line-height:1.6">'
-      + '<strong>Posição Multsoft:</strong> Churn rate ajustado de 7,1% está na zona <span class="'+crZone.cls+'">'+crZone.label+'</span> do mercado SaaS B2B. '
-      + 'O churn MRR de 6,6% ao ano está <span class="'+mrrZone.cls+'">abaixo do limiar crítico</span>.'
+      + '<strong>Posição Multsoft '+exec.completeYear+':</strong> Churn rate ajustado de '+crAdjAtual.toFixed(1).replace('.', ',')+'% está na zona <span class="'+crZone.cls+'">'+crZone.label+'</span> do mercado SaaS B2B. '
+      + 'O churn MRR de '+crMRRAtual.toFixed(1).replace('.', ',')+'% ao ano está <span class="'+mrrZone.cls+'">'+mrrZone.label.toLowerCase()+'</span>.'
       + '</div>'
       + '<div style="font-size:9px;color:var(--ink4);margin-top:8px">Fontes: Bessemer VP, OpenView Partners, SaaStr 2024</div>';
   }
 
-  // ── Projeção 2026 ────────────────────────────────────
-  // MRR PERDIDO = soma de todos os contratos cancelados no ano
-  // Fonte: aba "Calculos - churn" da planilha original
-  var mrrPerdido2023 = 72217;
-  var mrrPerdido2024 = 115736;
-  var mrrPerdido2025 = 109060;
-  // 2026: 36 cancelamentos em 4 meses = R$29.721 → ritmo de R$89k/ano
-  var mrr2026Acumulado = 29721;  // jan-abr/2026 (dados reais da posição)
-  var meses2026 = 4;
-  var ritmoMensal2026 = Math.round(mrr2026Acumulado / meses2026);
-  var proj2026 = ritmoMensal2026 * 12;  // projeção pelo ritmo atual
-  var proj2026conservador = Math.round((mrrPerdido2023 + mrrPerdido2024 + mrrPerdido2025) / 3);
-  var projMensal = ritmoMensal2026;
-  var tendencia = (mrrPerdido2025 - mrrPerdido2024) / mrrPerdido2024;
-  var evitPctTotal = 67;
-  var evitMRR  = Math.round(mrrPerdido2025 * evitPctTotal / 100);
-  var evitAnual = evitMRR * 12;
+  // ── Projeção ano corrente ────────────────────────────
+  var mrrAtualAcumulado = exec.currentYtdMRR;
+  var mesesAtual = exec.currentMonths;
+  var ritmoMensalAtual = exec.ritmoMensal;
+  var projAtual = exec.projAnnual;
+  var projMensal = ritmoMensalAtual;
+  var prevTrendPct = exec.prevMRR ? (exec.lastCompleteMRR - exec.prevMRR) / exec.prevMRR * 100 : 0;
+  var evitMRR = exec.avoidMRRAnnual;
+  var periodLabel = 'jan-' + monthShortPt(mesesAtual);
 
   var projEl = document.getElementById('projContent');
   if(projEl){
@@ -2991,30 +3093,30 @@ function renderExecutivo() {
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">'
       + '<span class="proj-arrow zone-green">↓</span>'
       + '<div>'
-      + '<div class="proj-number" style="color:#3a6b4a">R$ '+Math.round(proj2026/1000)+'k<span style="font-size:14px;font-weight:400;color:var(--ink4)">/ano projetado 2026</span></div>'
-      + '<div style="font-size:10px;color:var(--ink4);margin-top:2px">≈ R$ '+projMensal.toLocaleString('pt-BR')+'/mês · Baseado no ritmo real jan-abr/2026</div>'
+      + '<div class="proj-number" style="color:#3a6b4a">R$ '+Math.round(projAtual/1000)+'k<span style="font-size:14px;font-weight:400;color:var(--ink4)">/ano projetado '+exec.currentYear+'</span></div>'
+      + '<div style="font-size:10px;color:var(--ink4);margin-top:2px">≈ R$ '+projMensal.toLocaleString('pt-BR')+'/mês · Baseado no ritmo real '+periodLabel+'/'+exec.currentYear+'</div>'
       + '</div></div>'
       + '<div style="display:flex;flex-direction:column;gap:8px">'
       + '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bdr2);border-radius:6px">'
-      + '<span style="font-size:11px;color:var(--ink3)">MRR perdido 2024</span>'
-      + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--red2)">R$ 115k/ano</span>'
+      + '<span style="font-size:11px;color:var(--ink3)">MRR perdido '+exec.prevCompleteYear+'</span>'
+      + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:var(--red2)">R$ '+Math.round(exec.prevMRR/1000)+'k/ano</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--bdr2);border-radius:6px">'
-      + '<span style="font-size:11px;color:var(--ink3)">MRR perdido 2025</span>'
-      + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:#7a5c1e">R$ 109k/ano ↓5,8%</span>'
+      + '<span style="font-size:11px;color:var(--ink3)">MRR perdido '+exec.completeYear+'</span>'
+      + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:#7a5c1e">R$ '+Math.round(exec.lastCompleteMRR/1000)+'k/ano '+(prevTrendPct>0?'↑':'↓')+Math.abs(prevTrendPct).toFixed(1).replace('.', ',')+'%</span>'
       + '</div>'
       + '<div style="padding:8px 12px;background:var(--moss6);border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px">'
-      + '<div><div style="font-size:11px;color:var(--ink3);font-weight:600">2026 real (jan–abr)</div>'
-        + '<div style="font-size:10px;color:var(--ink4)">36 cancelamentos em 4 meses</div></div>'
-      + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:#3a6b4a;white-space:nowrap">R$ '+Math.round(mrr2026Acumulado/1000*10)/10+'k</span>'
+      + '<div><div style="font-size:11px;color:var(--ink3);font-weight:600">'+exec.currentYear+' real ('+periodLabel+')</div>'
+        + '<div style="font-size:10px;color:var(--ink4)">'+exec.currentRows.length+' cancelamentos em '+mesesAtual+' meses</div></div>'
+      + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:#3a6b4a;white-space:nowrap">R$ '+Math.round(mrrAtualAcumulado/1000*10)/10+'k</span>'
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--moss5);border-radius:6px">'
-      + '<span style="font-size:11px;color:var(--ink3)">Potencial recuperável (67%)</span>'
+      + '<span style="font-size:11px;color:var(--ink3)">Potencial recuperável ('+ins.evitPct+'%)</span>'
       + '<span style="font-family:JetBrains Mono,monospace;font-weight:700;color:#3a6b4a">R$ '+Math.round(evitMRR/1000)+'k/ano</span>'
       + '</div></div>'
       + '<div style="margin-top:12px;padding:10px;background:var(--moss6);border-radius:6px;font-size:11px;color:var(--ink2);line-height:1.55">'
-      + '📌 <strong>Lógica:</strong> Projeção 2026 baseada no ritmo real dos primeiros 4 meses (R$'+ritmoMensal2026.toLocaleString('pt-BR')+'/mês). '
-      + 'MRR Ativo atual: R$1,166k — NRR parcial 2026: 111,3%.'
+      + '<strong>Lógica:</strong> Projeção '+exec.currentYear+' baseada no ritmo real dos primeiros '+mesesAtual+' meses (R$'+ritmoMensalAtual.toLocaleString('pt-BR')+'/mês). '
+      + 'MRR Ativo atual: R$'+Math.round(exec.currentActiveMRR/1000)+'k - NRR parcial '+exec.currentYear+': '+String(exec.currentNRR).replace('.', ',')+'%.'
       + '</div>';
   }
 
@@ -4445,7 +4547,7 @@ function renderAtivosSummary() {
   var nrrBase = AGG.mrrAudit.find(function(r){ return r.y===2025; });
   var nrr    = nrrBase && nrrBase.sheet ? Math.round(totalF/nrrBase.sheet*1000)/10 : 111.3;
   var suffix = isFiltered ? ' (' + F.vendedor.split(' ')[0] + ')' : '';
-  var posLabel = HIST_CONTRATOS.length ? 'preview base crua' : 'posição 08/04/2026';
+  var posLabel = HIST_CONTRATOS.length ? 'preview base crua' : 'posição base local';
 
   // ── Render KPI cards dynamically ────────────────────────
   var kpiEl = document.getElementById('ativosKpis');
@@ -4742,7 +4844,7 @@ async function loadAtivosFromSheets() {
   if (lines.length < 2) return;
 
   const sep    = lines[0].includes(';') ? ';' : ',';
-  const header = lines[0].split(sep).map(function(h){ return h.trim().replace(/"/g,'').toLowerCase(); });
+  const header = parseCsvRow(lines[0], sep).map(function(h){ return h.trim().replace(/"/g,'').toLowerCase(); });
 
   // Exact column mapping for Multsoft position report:
   // [0]Documento [1]Cliente [2]Data Venda [3]Data Base [4]Data para Reajuste
@@ -4778,12 +4880,12 @@ async function loadAtivosFromSheets() {
   // Parse — only rows WITHOUT cancellation date = active
   const newAtivos = [];
   for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(sep).map(function(c){ return c.trim().replace(/^"|"$/g,''); });
+    const cols = parseCsvRow(lines[i], sep).map(function(c){ return c.trim().replace(/^"|"$/g,''); });
     if (!cols[iCliente]) continue;
     const cancelado = iCancel >= 0 && cols[iCancel] && cols[iCancel].length > 2;
     if (cancelado) continue; // skip cancelled contracts
 
-    const mrr     = parseFloat(cols[iMRR]) || 0;
+    const mrr     = parseBrNumber(cols[iMRR]) || 0;
     const vendedor = iVendedor >= 0 ? (cols[iVendedor] || '') : '';
     newAtivos.push({c: cols[iCliente], mrr: mrr, v: vendedor});
   }
@@ -4810,12 +4912,10 @@ async function loadAtivosFromSheets() {
   var stats = {A:{cnt:0,mrr:0},B:{cnt:0,mrr:0},C:{cnt:0,mrr:0},total:Math.round(totalMRR)};
   newAtivos.forEach(function(r){ stats[r.cls].cnt++; stats[r.cls].mrr+=r.mrr; });
   // Update thresholds
-  var limaiteA = newAtivos.filter(function(r){return r.cls==='A';}); 
-  stats.limiteA = limaiteA.length ? Math.round(limaiteA[limaiteA.length-1].mrr) : 0;
+  var limiteA = newAtivos.filter(function(r){return r.cls==='A';}); 
+  stats.limiteA = limiteA.length ? Math.round(limiteA[limiteA.length-1].mrr) : 0;
   var limiteB = newAtivos.filter(function(r){return r.cls==='B';});
   stats.limiteB = limiteB.length ? Math.round(limiteB[limiteB.length-1].mrr) : 0;
-  stats.limiteA = stats.limiteA;
-  stats.limiteB = stats.limiteB;
 
   // Mutate ABC_STATS values (can't reassign const)
   ABC_STATS.A.cnt   = stats.A.cnt;   ABC_STATS.A.mrr = Math.round(stats.A.mrr);

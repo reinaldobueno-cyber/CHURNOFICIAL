@@ -949,15 +949,15 @@ footer p{font-size:10px;color:var(--ink5);letter-spacing:.08em;text-transform:up
       <div style="background:var(--moss6);border:1.5px solid var(--moss4);border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px">
         <span style="font-size:18px">📋</span>
         <div style="font-size:11.5px;color:var(--ink2);line-height:1.55">
-          <strong>Como atualizar a base ativa:</strong>
+          <strong>Como atualizar a base histórica:</strong>
           <ol style="margin:6px 0 0 16px;padding:0;font-size:11px;line-height:1.8">
             <li>Exporte o <strong>relatório de posição de contratos</strong> do sistema como planilha</li>
-            <li>No Google Sheets, abra a aba <strong>Base_Ativa</strong> e cole os dados (substitua tudo)</li>
-            <li>Publique a aba como CSV: <em>Arquivo → Publicar na web → Base_Ativa → CSV</em></li>
-            <li>Cole o link em <code>SHEETS_URL_ATIVOS</code> no HTML (só precisa fazer isso uma vez)</li>
-            <li>Clique <strong>↻ Atualizar dados</strong> — a Curva ABC e KPIs recalculam sozinhos</li>
+            <li>No Google Sheets, abra a aba <strong>Base_Historica_Contratos</strong> e cole a planilha crua inteira</li>
+            <li>Publique a aba como CSV: <em>Arquivo → Publicar na web → Base_Historica_Contratos → CSV</em></li>
+            <li>Cole o link em <code>SHEETS_URL_CONTRATOS_RAW</code> no HTML (só precisa fazer isso uma vez)</li>
+            <li>Clique <strong>↻ Atualizar dados</strong> — Base Ativa, Curva ABC e histórico recalculam sozinhos</li>
           </ol>
-          <span style="color:var(--ink4);font-size:10px"> · Posição atual embutida: 08/04/2026 · Com SHEETS_URL_ATIVOS configurado, atualiza automaticamente</span>
+          <span style="color:var(--ink4);font-size:10px"> · Preview local usa data/base_contratos_raw.csv · Com SHEETS_URL_CONTRATOS_RAW configurado, atualiza via Sheets</span>
         </div>
       </div>
 
@@ -1014,6 +1014,25 @@ footer p{font-size:10px;color:var(--ink5);letter-spacing:.08em;text-transform:up
         <canvas id="cVendAtivos" height="160"></canvas>
       </div>
 
+      <div class="card" style="margin-bottom:20px">
+        <div class="ct">Base histórica por ano</div>
+        <div class="cs" style="margin-bottom:16px">Contratos ativos em cada fechamento anual, incluindo contratos que cancelaram depois</div>
+        <div class="tbl-wrap" style="max-height:none">
+          <table class="tbl">
+            <thead>
+              <tr>
+                <th>Ano</th>
+                <th>Contratos ativos no fechamento</th>
+                <th>MRR ativo estimado</th>
+                <th>Entradas no ano</th>
+                <th>Cancelados no ano</th>
+              </tr>
+            </thead>
+            <tbody id="baseHistTbody"></tbody>
+          </table>
+        </div>
+      </div>
+
     </div>
   </div><!-- /page-ativos -->
 
@@ -1034,6 +1053,8 @@ window._abcFilter = 'all';
 const SHEETS_URL          = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKc8Bt_xbx3IUR4mRHTC0Cq3qu2VyXpf4qaB3IR7i0ZHAfRTWMAAfpKcx9si1kw6moaU5NrdBUEPWE/pub?single=true&output=csv&gid=730334906";
 const SHEETS_URL_RETIDOS  = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKc8Bt_xbx3IUR4mRHTC0Cq3qu2VyXpf4qaB3IR7i0ZHAfRTWMAAfpKcx9si1kw6moaU5NrdBUEPWE/pub?single=true&output=csv&gid=1630830572";
 const SHEETS_URL_ATIVOS   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKc8Bt_xbx3IUR4mRHTC0Cq3qu2VyXpf4qaB3IR7i0ZHAfRTWMAAfpKcx9si1kw6moaU5NrdBUEPWE/pub?single=true&output=csv&gid=784054546";
+const SHEETS_URL_CONTRATOS_RAW = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSKc8Bt_xbx3IUR4mRHTC0Cq3qu2VyXpf4qaB3IR7i0ZHAfRTWMAAfpKcx9si1kw6moaU5NrdBUEPWE/pub?single=true&output=csv&gid=607502211";
+const LOCAL_CONTRACTS_CSV = "data/base_contratos_raw.csv"; // preview local: relatório cru do sistema
 // INSTRUÇÕES: No Google Sheets → Arquivo → Publicar na web
 //   Aba Cancelamentos → CSV → copiar link → colar em SHEETS_URL
 //   Aba Retidos       → CSV → copiar link → colar em SHEETS_URL_RETIDOS
@@ -2531,7 +2552,7 @@ async function doRefresh() {
 
   let isSuccess = false;
   try {
-    await Promise.all([loadFromSheets(), loadRetidosFromSheets()]);
+    await Promise.all([loadFromSheets(), loadRetidosFromSheets(), loadContratosRaw()]);
     isSuccess = true;
     const now = new Date();
     const hm  = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
@@ -4142,6 +4163,196 @@ const VEND_ATIVOS = [
   ["THIAGO TAVARES",                  11795,  14],
 ];
 
+let HIST_CONTRATOS = [];
+let ATIVOS_DERIVADOS = null;
+let ABC_STATS_DERIVED = null;
+let VEND_ATIVOS_DERIVED = null;
+let BASE_HISTORICA = [];
+
+function getAtivosABCData(){
+  return ATIVOS_DERIVADOS && ATIVOS_DERIVADOS.length ? ATIVOS_DERIVADOS : ALL_ATIVOS_ABC;
+}
+
+function getABCStats(){
+  return ABC_STATS_DERIVED || ABC_STATS;
+}
+
+function getVendAtivos(){
+  return VEND_ATIVOS_DERIVED && VEND_ATIVOS_DERIVED.length ? VEND_ATIVOS_DERIVED : VEND_ATIVOS;
+}
+
+function getHistoricalContext(){
+  return {
+    total: HIST_CONTRATOS.length,
+    ativos: ATIVOS_DERIVADOS ? ATIVOS_DERIVADOS.length : ALL_ATIVOS_ABC.length,
+    cancelados: HIST_CONTRATOS.filter(function(r){ return !!r.cancelDate; }).length,
+  };
+}
+
+function parseContractDate(value){
+  if(!value) return null;
+  const t=parsePtDate(value);
+  return t ? new Date(t) : null;
+}
+
+function normalizeCsvHeader(h){
+  return norm(h).replace(/[^A-Z0-9]/g,'');
+}
+
+function classifyABC(records){
+  const rows=records.slice().sort(function(a,b){ return b.mrr-a.mrr; });
+  const total=rows.reduce(function(s,r){ return s+r.mrr; },0);
+  let cum=0;
+  rows.forEach(function(r){
+    cum += r.mrr;
+    const pct = total ? cum/total : 0;
+    r.cls = pct <= .70 ? 'A' : pct <= .90 ? 'B' : 'C';
+    r.cumPct = total ? Math.round(pct*1000)/10 : 0;
+  });
+  return rows;
+}
+
+function paymentDivisor(forma){
+  const f=norm(forma);
+  if(f.includes('ANUAL')) return 12;
+  if(f.includes('SEMESTRAL') || f.includes('SEMESTREAL')) return 6;
+  if(f.includes('TRIMESTRAL')) return 3;
+  return 1;
+}
+
+function monthlyMRRFromContract(valorAtual, valorMes, forma){
+  const valor=parseBrNumber(valorAtual);
+  const mensalInformado=parseBrNumber(valorMes);
+  const divisor=paymentDivisor(forma);
+  if(valor>0) return valor/divisor;
+  return mensalInformado;
+}
+
+function normalizeRawCancelReason(reason){
+  const r=norm(reason);
+  if(!r) return '';
+  if(r.startsWith('X SISTEMA SEM UTILIZACAO')) return 'DIFICULDADE DE USO';
+  if(r.startsWith('X SEM INTERESSE EM CONTINUAR')) return 'DIFICULDADE DE USO';
+  if(r.startsWith('X DESISTIU DA IMPLANTACAO')) return 'DIFICULDADE DE USO';
+  return reason;
+}
+
+function buildActivePreview(records){
+  const active=records
+    .filter(function(r){ return !r.cancelDate; })
+    .map(function(r){ return {c:r.cliente,mrr:r.mrr,v:r.vendedor||'SEM VENDEDOR',cls:'C',cumPct:0,doc:r.doc}; });
+
+  const classified=classifyABC(active);
+  const total=classified.reduce(function(s,r){ return s+r.mrr; },0);
+  const stats={A:{cnt:0,mrr:0,pct:70},B:{cnt:0,mrr:0,pct:20},C:{cnt:0,mrr:0,pct:10},total:Math.round(total),limiteA:0,limiteB:0};
+  classified.forEach(function(r){ stats[r.cls].cnt++; stats[r.cls].mrr+=r.mrr; });
+  ['A','B','C'].forEach(function(cls){ stats[cls].mrr=Math.round(stats[cls].mrr); });
+  const aRows=classified.filter(function(r){ return r.cls==='A'; });
+  const bRows=classified.filter(function(r){ return r.cls==='B'; });
+  stats.limiteA=aRows.length ? Math.round(aRows[aRows.length-1].mrr) : 0;
+  stats.limiteB=bRows.length ? Math.round(bRows[bRows.length-1].mrr) : 0;
+
+  const vendMap={};
+  classified.forEach(function(r){
+    const k=r.v||'SEM VENDEDOR';
+    if(!vendMap[k]) vendMap[k]={mrr:0,cnt:0};
+    vendMap[k].mrr+=r.mrr;
+    vendMap[k].cnt++;
+  });
+  const vend=Object.entries(vendMap).map(function(e){ return [e[0],Math.round(e[1].mrr),e[1].cnt]; })
+    .sort(function(a,b){ return b[1]-a[1]; })
+    .slice(0,8);
+
+  return {active:classified,stats:stats,vend:vend};
+}
+
+function buildHistoricalBase(records){
+  const years=[2020,2021,2022,2023,2024,2025,2026];
+  return years.map(function(y){
+    const end=new Date(y,11,31,23,59,59);
+    const start=new Date(y,0,1);
+    const active=records.filter(function(r){
+      const sale=r.saleDate;
+      const cancel=r.cancelDate;
+      return (!sale || sale<=end) && (!cancel || cancel>end);
+    });
+    const entradas=records.filter(function(r){ return r.saleDate && r.saleDate>=start && r.saleDate<=end; }).length;
+    const cancelados=records.filter(function(r){ return r.cancelDate && r.cancelDate>=start && r.cancelDate<=end; }).length;
+    return {
+      y:y,
+      contratos:active.length,
+      mrr:active.reduce(function(s,r){ return s+r.mrr; },0),
+      entradas:entradas,
+      cancelados:cancelados,
+    };
+  });
+}
+
+function applyHistoricalContracts(records){
+  HIST_CONTRATOS=records;
+  const preview=buildActivePreview(records);
+  ATIVOS_DERIVADOS=preview.active;
+  ABC_STATS_DERIVED=preview.stats;
+  VEND_ATIVOS_DERIVED=preview.vend;
+  BASE_HISTORICA=buildHistoricalBase(records);
+  console.log('[Base Histórica] '+records.length+' contratos carregados · '+ATIVOS_DERIVADOS.length+' ativos hoje');
+  if(document.getElementById('page-ativos') && document.getElementById('page-ativos').style.display !== 'none'){
+    renderAtivos();
+  }
+}
+
+async function loadContratosRaw(){
+  const source = SHEETS_URL_CONTRATOS_RAW || LOCAL_CONTRACTS_CSV;
+  if(!source) return;
+  try{
+    const sources = SHEETS_URL_CONTRATOS_RAW
+      ? [source, 'https://api.allorigins.win/raw?url=' + encodeURIComponent(source), 'https://corsproxy.io/?' + encodeURIComponent(source)]
+      : [source];
+    let csv='';
+    for(let si=0;si<sources.length;si++){
+      try{
+        const res=await fetch(sources[si],{cache:'no-cache'});
+        if(!res.ok) continue;
+        csv=await res.text();
+        if(csv && csv.length>100) break;
+      } catch(e){ /* try next */ }
+    }
+    if(!csv) throw new Error('CSV da base histórica indisponível');
+    csv=csv.replace(/^\uFEFF/,'');
+    const lines=csv.split('\n').filter(function(l){ return l.trim(); });
+    if(lines.length<2) return;
+    const sep=lines[0].includes(';')?';':',';
+    const header=parseCsvRow(lines[0],sep);
+    const idx={};
+    header.forEach(function(h,i){ idx[normalizeCsvHeader(h)]=i; });
+    const records=[];
+    for(let i=1;i<lines.length;i++){
+      const cols=parseCsvRow(lines[i],sep);
+      const cliente=cols[idx.CLIENTE]||'';
+      if(!cliente) continue;
+      records.push({
+        doc: cols[idx.DOCUMENTO] || '',
+        cliente: cliente,
+        saleDate: parseContractDate(cols[idx.DATAVENDA]),
+        baseDate: parseContractDate(cols[idx.DATABASE]),
+        reajusteDate: parseContractDate(cols[idx.DATAPARAREAJUSTE]),
+        canal: cols[idx.TIPOVENDA] || '',
+        valorAtual: parseBrNumber(cols[idx.VALORATUAL]),
+        forma: cols[idx.FORMADEPAGAMENTO] || '',
+        mrr: monthlyMRRFromContract(cols[idx.VALORATUAL], cols[idx.VALORMES], cols[idx.FORMADEPAGAMENTO]),
+        vendedor: cols[idx.VENDEDOR] || '',
+        cancelDate: parseContractDate(cols[idx.DATACANCELAMENTO]),
+        motivo: normalizeRawCancelReason(cols[idx.DESCRICAO] || ''),
+        motivoOriginal: cols[idx.DESCRICAO] || '',
+        responsavelCancel: cols[idx.NOME] || '',
+      });
+    }
+    if(records.length) applyHistoricalContracts(records);
+  } catch(e){
+    console.warn('[Base Histórica] preview local não carregado:', e.message);
+  }
+}
+
 function filterABC(cls) {
   window._abcFilter = cls;
   ['A','B','C','all'].forEach(function(c){
@@ -4218,8 +4429,10 @@ function renderABCList() {
 function renderAtivosSummary() {
   var vendFilter = (typeof F !== 'undefined' && F.vendedor && F.vendedor !== 'all') ? F.vendedor.toUpperCase() : '';
   var isFiltered = vendFilter !== '';
+  var sourceAtivos = getAtivosABCData();
+  var hist = getHistoricalContext();
 
-  var filteredAtivos = ALL_ATIVOS_ABC.filter(function(r){
+  var filteredAtivos = sourceAtivos.filter(function(r){
     return !vendFilter || r.v.toUpperCase().indexOf(vendFilter) >= 0;
   });
 
@@ -4229,8 +4442,10 @@ function renderAtivosSummary() {
   var clsF     = {A:{cnt:0,mrr:0},B:{cnt:0,mrr:0},C:{cnt:0,mrr:0}};
   filteredAtivos.forEach(function(r){ clsF[r.cls].cnt++; clsF[r.cls].mrr+=r.mrr; });
 
-  var nrr    = 111.3; // fixed from position data
+  var nrrBase = AGG.mrrAudit.find(function(r){ return r.y===2025; });
+  var nrr    = nrrBase && nrrBase.sheet ? Math.round(totalF/nrrBase.sheet*1000)/10 : 111.3;
   var suffix = isFiltered ? ' (' + F.vendedor.split(' ')[0] + ')' : '';
+  var posLabel = HIST_CONTRATOS.length ? 'preview base crua' : 'posição 08/04/2026';
 
   // ── Render KPI cards dynamically ────────────────────────
   var kpiEl = document.getElementById('ativosKpis');
@@ -4242,9 +4457,9 @@ function renderAtivosSummary() {
 
     kpiEl.innerHTML =
       '<div class="kpi k-moss">'
-        +'<div class="kl">Contratos Ativos'+suffix+' <span class="tip-icon" data-tip="Total de contratos ativos na posição de 08/04/2026. '+(isFiltered?'Filtrado por vendedor '+F.vendedor.split(' ')[0]+'.':'Inclui todos os 959 contratos.')+'">i</span></div>'
+        +'<div class="kl">Contratos Ativos'+suffix+' <span class="tip-icon" data-tip="Total de contratos sem Data Cancelamento na base crua. '+(isFiltered?'Filtrado por vendedor '+F.vendedor.split(' ')[0]+'.':'A base histórica mantém também os contratos cancelados para cálculos por período.')+'">i</span></div>'
         +'<div class="kv">'+cntTotal+'</div>'
-        +'<div class="ks">posição 08/04/2026</div>'
+        +'<div class="ks">'+posLabel+(hist.cancelados?' · '+hist.cancelados+' cancelados históricos':'')+'</div>'
       +'</div>'
       +'<div class="kpi">'
         +'<div class="kl">MRR Ativo'+suffix+' <span class="tip-icon" data-tip="Soma do Valor/Mês de todos os contratos ativos'+(isFiltered?' da carteira de '+F.vendedor.split(' ')[0]:'')+'">i</span></div>'
@@ -4262,7 +4477,7 @@ function renderAtivosSummary() {
         +'<div class="ks">R$ '+clsAMrr+'k = '+clsAPct+'% do MRR</div>'
       +'</div>'
       +'<div class="kpi">'
-        +'<div class="kl">NRR Parcial 2026 <span class="tip-icon" data-tip="NRR = MRR Ativo hoje ÷ MRR Ativo 2025 × 100. R$1.166k ÷ R$1.047k = 111,3%. Acima de 100% = base crescendo mesmo com churns.">i</span></div>'
+        +'<div class="kl">NRR Parcial 2026 <span class="tip-icon" data-tip="NRR = MRR Ativo hoje ÷ MRR Ativo 2025 × 100. No preview, o numerador vem da base crua sem Data Cancelamento. Acima de 100% = base crescendo mesmo com churns.">i</span></div>'
         +'<div class="kv" style="color:#3a6b4a">'+nrr+'%</div>'
         +'<div class="ks">vs MRR ativo de 2025</div>'
       +'</div>';
@@ -4292,6 +4507,24 @@ function renderAtivosSummary() {
       +'<span style="font-size:10px;font-weight:700;color:'+col+'">'+cls+'</span>'
       +'<span style="font-size:10px;color:var(--ink3)">'+s.cnt+' clientes · R$'+(s.mrr/1000).toFixed(0)+'k · '+Math.round(s.mrr/totalF*100)+'%</span>'
       +'</div>';
+  }).join('');
+}
+
+function renderBaseHistorica(){
+  var tbody=document.getElementById('baseHistTbody');
+  if(!tbody) return;
+  if(!BASE_HISTORICA.length){
+    tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--ink4);padding:20px">Preview histórico ainda não carregado. Abra via servidor local para ler data/base_contratos_raw.csv.</td></tr>';
+    return;
+  }
+  tbody.innerHTML=BASE_HISTORICA.map(function(r){
+    return '<tr>'
+      + '<td class="mono">'+r.y+'</td>'
+      + '<td class="mono" style="font-weight:600">'+fN(r.contratos)+'</td>'
+      + '<td class="mono right" style="font-weight:600;color:var(--moss2)">'+fRfull(r.mrr)+'</td>'
+      + '<td class="mono">'+fN(r.entradas)+'</td>'
+      + '<td class="mono">'+fN(r.cancelados)+'</td>'
+      + '</tr>';
   }).join('');
 }
 
@@ -4362,10 +4595,10 @@ function renderAtivos() {
     });
   } // end else: no vendor filter
 
-  // ── Curva ABC (954 clientes ativos) ────────────────────
-  var ABC_DATA   = ALL_ATIVOS_ABC;
-  var totalMRRABC = ABC_STATS.total;
-  var clsStats    = ABC_STATS;
+  // ── Curva ABC (ativos derivados da base crua quando disponível) ─────
+  var ABC_DATA   = getAtivosABCData();
+  var totalMRRABC = getABCStats().total;
+  var clsStats    = getABCStats();
 
   // Summary bar
   var summaryEl = document.getElementById('abcSummary');
@@ -4402,29 +4635,31 @@ function renderAtivos() {
   if(bAll) bAll.style.boxShadow='0 0 0 2px var(--ink)';
   renderAtivosSummary();
   renderABCList();
+  renderBaseHistorica();
 
     // ── Vendedor ativos chart ────────────────────────────────
   if(CH.vendAtivos) CH.vendAtivos.destroy();
   var vendF = (typeof F !== 'undefined' && F.vendedor !== 'all') ? F.vendedor.toUpperCase() : '';
-  var vaBgColors = VEND_ATIVOS.map(function(v){
+  var vendAtivos = getVendAtivos();
+  var vaBgColors = vendAtivos.map(function(v){
     var match = vendF && v[0].toUpperCase().indexOf(vendF) >= 0;
     return match ? '#3d5233' : '#3d523344';
   });
-  var vaBorderColors = VEND_ATIVOS.map(function(v){
+  var vaBorderColors = vendAtivos.map(function(v){
     var match = vendF && v[0].toUpperCase().indexOf(vendF) >= 0;
     return match ? '#3d5233' : '#3d523388';
   });
   CH.vendAtivos = new Chart(document.getElementById('cVendAtivos'), {
     type:'bar',
     data:{
-      labels: VEND_ATIVOS.map(function(v){ return v[0].split(' ')[0]+' '+v[0].split(' ')[1]; }),
+      labels: vendAtivos.map(function(v){ return v[0].split(' ')[0]+' '+(v[0].split(' ')[1]||''); }),
       datasets:[
-        { label:'MRR Ativo (R$)', data:VEND_ATIVOS.map(function(v){return v[1];}),
+        { label:'MRR Ativo (R$)', data:vendAtivos.map(function(v){return v[1];}),
           backgroundColor: vendF ? vaBgColors : ['#3d5233cc','#5a7347cc','#7a9463cc','#b8cca8cc','#7a5c1ecc','#c4cfc0cc'],
           borderColor: vendF ? vaBorderColors : ['#3d5233','#5a7347','#7a9463','#b8cca8','#7a5c1e','#c4cfc0'],
           borderWidth: vendF ? [1,1,1,1,1,1] : 1,
           borderRadius:4, yAxisID:'y' },
-        { label:'Contratos', data:VEND_ATIVOS.map(function(v){return v[2];}),
+        { label:'Contratos', data:vendAtivos.map(function(v){return v[2];}),
           backgroundColor:'transparent', borderColor:'#7a5c1e', borderWidth:2,
           type:'line', tension:.3, pointBackgroundColor:'#7a5c1e', pointRadius:5, yAxisID:'y2' }
       ]
@@ -4475,7 +4710,7 @@ renderExecutivo();
   const ledText = document.getElementById('sheetsLedText');
   if (led) { led.style.background='#f0a500'; ledText.textContent='Carregando...'; }
   try {
-    await Promise.all([loadFromSheets(), loadRetidosFromSheets()]);
+    await Promise.all([loadFromSheets(), loadRetidosFromSheets(), loadContratosRaw()]);
     if (led) { led.style.background='#3a6b4a'; ledText.textContent='Sheets ✓'; ledText.style.color='var(--moss)'; }
   } catch(e) {
     if (led) { led.style.background='#b05030'; ledText.textContent='Dados locais'; ledText.style.color='var(--red2)'; }
